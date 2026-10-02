@@ -1,0 +1,57 @@
+services:
+  # CONTAINER 1: O BANCO DE DADOS
+  db:
+    image: mysql:5.7
+    command: --innodb-use-native-aio=0 # Evita travamentos comuns no WSL
+    container_name: db
+    restart: always
+    environment:
+      MYSQL_DATABASE: nodedb
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - fc_network
+
+  # CONTAINER 2: A NOSSA APLICAÇÃO NODE
+  node_app:
+    build:
+      context: ./node # Aponta para onde está o Dockerfile do Node
+    container_name: node_app
+    # Aqui usamos o dockerize que instalamos no Dockerfile
+    entrypoint: dockerize -wait tcp://db:3306 -timeout 30s node index.js
+    volumes:
+      - ./node:/usr/src/app
+      - /usr/src/app/node_modules # Impede que sua máquina local apague o node_modules interno
+    environment:
+      - DB_HOST=db
+      - DB_NAME=nodedb
+      - DB_USER=root
+      - DB_PASSWORD=root
+    networks:
+      - fc_network
+    depends_on:
+      - db
+
+  # CONTAINER 3: O PROXY REVERSO (NGINX)
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: always
+    ports:
+      - "8080:80" # Mapeia a porta 8080 da sua máquina para a 80 interna do Nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - fc_network
+    depends_on:
+      - node_app
+
+networks:
+  fc_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
